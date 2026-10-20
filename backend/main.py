@@ -2,10 +2,11 @@
 from io import BytesIO
 
 import pandas as pd
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from services.profiling import profile_dataset
 from services.analysis import descriptive_statistics, group_by_column
 from services.visualization import create_chart
+from services.anomaly import calculate_correlations, detect_outliers
 
 app = FastAPI(
     title="Personal AI Data Agent",
@@ -234,4 +235,59 @@ async def generate_chart(
         "chart_type": chart_type,
         "chart": chart,
     }
+
+@app.post("/analysis/correlations")
+async def analyze_correlations(
+    file: UploadFile = File(...),
+    method: str = "pearson",
+):
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(
+            status_code=400,
+            detail="Please upload a CSV file.",
+        )
+
+    content = await file.read(MAX_FILE_SIZE + 1)
+
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="File exceeds the 10 MB limit.",
+        )
+
+    try:
+        df = pd.read_csv(BytesIO(content))
+        result = calculate_correlations(df, method)
+        return {"filename": file.filename, **result}
+
+    except (pd.errors.ParserError, UnicodeDecodeError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+@app.post("/analysis/outliers")
+async def analyze_outliers(
+    file: UploadFile = File(...),
+    column: str = Form(...),
+):
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(
+            status_code=400,
+            detail="Please upload a CSV file.",
+        )
+
+    content = await file.read(MAX_FILE_SIZE + 1)
+
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="File exceeds the 10 MB limit.",
+        )
+
+    try:
+        df = pd.read_csv(BytesIO(content))
+        result = detect_outliers(df, column)
+        return {"filename": file.filename, **result}
+
+    except (pd.errors.ParserError, UnicodeDecodeError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
 
