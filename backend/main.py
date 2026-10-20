@@ -4,6 +4,7 @@ from io import BytesIO
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from services.profiling import profile_dataset
+from services.analysis import descriptive_statistics, group_by_column
 
 app = FastAPI(
     title="Personal AI Data Agent",
@@ -137,3 +138,59 @@ async def profile_uploaded_dataset(file: UploadFile = File(...)):
         "filename": file.filename,
         **profile_dataset(df),
     }
+
+@app.post("/analysis/descriptive")
+async def analyze_descriptive(
+    file: UploadFile = File(...),
+    column: str = "",
+):
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only CSV files are supported.",
+        )
+
+    content = await file.read(MAX_FILE_SIZE + 1)
+
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="File exceeds the 10 MB limit.",
+        )
+
+    try:
+        df = pd.read_csv(BytesIO(content))
+        result = descriptive_statistics(df, column)
+    except (pd.errors.ParserError, UnicodeDecodeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    return result
+
+
+@app.post("/analysis/group")
+async def analyze_groups(
+    file: UploadFile = File(...),
+    group_column: str = "",
+    value_column: str = "",
+):
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only CSV files are supported.",
+        )
+
+    content = await file.read(MAX_FILE_SIZE + 1)
+
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="File exceeds the 10 MB limit.",
+        )
+
+    try:
+        df = pd.read_csv(BytesIO(content))
+        result = group_by_column(df, group_column, value_column)
+    except (pd.errors.ParserError, UnicodeDecodeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    return result
