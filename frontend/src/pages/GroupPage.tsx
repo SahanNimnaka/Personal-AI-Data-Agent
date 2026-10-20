@@ -10,7 +10,7 @@ import { useAllColumns, useNumericColumns } from '../hooks/useColumns';
 import { formatNumber } from '../utils/validation';
 
 export default function GroupPage() {
-  const { file } = useDataset();
+  const { file, recordResult } = useDataset();
   const allColumns = useAllColumns();
   const numericColumns = useNumericColumns();
   const [groupColumn, setGroupColumn] = useState('');
@@ -31,13 +31,19 @@ export default function GroupPage() {
     setLoading(true);
     setError(null);
     try {
-      setResult(await groupAnalysis(file, groupColumn, valueColumn));
+      const response = await groupAnalysis(
+        file,
+        groupColumn,
+        valueColumn,
+      );
+      setResult(response);
+      recordResult('group', { ...response });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Grouping failed.');
     } finally {
       setLoading(false);
     }
-  }, [file, groupColumn, valueColumn]);
+  }, [file, groupColumn, valueColumn, recordResult]);
 
   if (!file) {
     return (

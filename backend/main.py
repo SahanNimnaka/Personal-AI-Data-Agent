@@ -1,9 +1,20 @@
 
+import logging
 from io import BytesIO
 
 import pandas as pd
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import (
+    Body,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
 from services.profiling import profile_dataset
 from services.analysis import descriptive_statistics, group_by_column
 from services.visualization import create_chart
@@ -14,6 +25,7 @@ from services.agent import (
     run_agent,
 )
 from services.ml import inspect_targets, train_and_compare
+from services.reports import ReportError, build_report
 
 app = FastAPI(
     title="Personal AI Data Agent",
@@ -34,38 +46,41 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+logger = logging.getLogger("personal_ai_data_agent")
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    # Log full diagnostics server-side; return a generic body so no
+    # stack traces, paths, or environment details reach clients.
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected server error occurred."},
+    )
+
+
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 PREVIEW_ROWS = 5
+MAX_COLUMNS = 2000
 
 
-@app.get("/")
-def root():
-    return {
-        "message": "Personal AI Data Agent API is running!",
-        "status": "success",
-    }
+async def _read_csv_upload(
+    file: UploadFile,
+    *,
+    require_rows: bool = True,
+) -> pd.DataFrame:
+    """
+    Validate and parse an uploaded CSV with consistent limits.
 
-
-@app.get("/health")
-def health_check():
-    return {
-        "status": "healthy",
-        "service": "personal-ai-data-agent",
-    }
-
-
-@app.post("/datasets/upload")
-async def upload_dataset(file: UploadFile = File(...)):
-    if not file.filename:
+    Raises HTTPException with a safe, generic message on any problem.
+    """
+    if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(
             status_code=400,
-            detail="A filename is required.",
-        )
-
-    if not file.filename.lower().endswith(".csv"):
-        raise HTTPException(
-            status_code=400,
-            detail="Only CSV files are supported.",
+            detail="Please upload a CSV file.",
         )
 
     content = await file.read(MAX_FILE_SIZE + 1)
@@ -90,11 +105,42 @@ async def upload_dataset(file: UploadFile = File(...)):
             detail="The file could not be parsed as a valid CSV.",
         ) from None
 
+    if len(df.columns) > MAX_COLUMNS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"The CSV exceeds the maximum of {MAX_COLUMNS} columns."
+            ),
+        )
+
     if df.empty or len(df.columns) == 0:
         raise HTTPException(
             status_code=400,
             detail="The CSV must contain a header and at least one data row.",
         )
+
+    return df
+
+
+@app.get("/")
+def root():
+    return {
+        "message": "Personal AI Data Agent API is running!",
+        "status": "success",
+    }
+
+
+@app.get("/health")
+def health_check():
+    return {
+        "status": "healthy",
+        "service": "personal-ai-data-agent",
+    }
+
+
+@app.post("/datasets/upload")
+async def upload_dataset(file: UploadFile = File(...)):
+    df = await _read_csv_upload(file)
 
     missing_values = {
         str(column): int(count)
@@ -119,39 +165,7 @@ async def upload_dataset(file: UploadFile = File(...)):
     }
 @app.post("/datasets/profile")
 async def profile_uploaded_dataset(file: UploadFile = File(...)):
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(
-            status_code=400,
-            detail="Only CSV files are supported.",
-        )
-
-    content = await file.read(MAX_FILE_SIZE + 1)
-
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail="File exceeds the 10 MB limit.",
-        )
-
-    if not content:
-        raise HTTPException(
-            status_code=400,
-            detail="The uploaded file is empty.",
-        )
-
-    try:
-        df = pd.read_csv(BytesIO(content))
-    except (pd.errors.ParserError, UnicodeDecodeError, ValueError):
-        raise HTTPException(
-            status_code=400,
-            detail="The file could not be parsed as a valid CSV.",
-        ) from None
-
-    if df.empty or len(df.columns) == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="The CSV must contain a header and at least one data row.",
-        )
+    df = await _read_csv_upload(file)
 
     return {
         "filename": file.filename,
@@ -163,27 +177,12 @@ async def analyze_descriptive(
     file: UploadFile = File(...),
     column: str = "",
 ):
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(
-            status_code=400,
-            detail="Only CSV files are supported.",
-        )
-
-    content = await file.read(MAX_FILE_SIZE + 1)
-
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail="File exceeds the 10 MB limit.",
-        )
+    df = await _read_csv_upload(file)
 
     try:
-        df = pd.read_csv(BytesIO(content))
-        result = descriptive_statistics(df, column)
-    except (pd.errors.ParserError, UnicodeDecodeError, ValueError) as exc:
+        return descriptive_statistics(df, column)
+    except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
-
-    return result
 
 
 @app.post("/analysis/group")
@@ -192,27 +191,12 @@ async def analyze_groups(
     group_column: str = "",
     value_column: str = "",
 ):
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(
-            status_code=400,
-            detail="Only CSV files are supported.",
-        )
-
-    content = await file.read(MAX_FILE_SIZE + 1)
-
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail="File exceeds the 10 MB limit.",
-        )
+    df = await _read_csv_upload(file)
 
     try:
-        df = pd.read_csv(BytesIO(content))
-        result = group_by_column(df, group_column, value_column)
-    except (pd.errors.ParserError, UnicodeDecodeError, ValueError) as exc:
+        return group_by_column(df, group_column, value_column)
+    except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
-
-    return result
 
 
 @app.post("/visualizations/chart")
@@ -222,30 +206,11 @@ async def generate_chart(
     x_column: str = "",
     y_column: str | None = None,
 ):
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(
-            status_code=400,
-            detail="Only CSV files are supported.",
-        )
-
-    content = await file.read(MAX_FILE_SIZE + 1)
-
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail="File exceeds the 10 MB limit.",
-        )
-
-    if not content:
-        raise HTTPException(
-            status_code=400,
-            detail="The uploaded file is empty.",
-        )
+    df = await _read_csv_upload(file)
 
     try:
-        df = pd.read_csv(BytesIO(content))
         chart = create_chart(df, chart_type, x_column, y_column)
-    except (pd.errors.ParserError, UnicodeDecodeError, ValueError) as exc:
+    except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
 
     return {
@@ -253,59 +218,35 @@ async def generate_chart(
         "chart": chart,
     }
 
+
 @app.post("/analysis/correlations")
 async def analyze_correlations(
     file: UploadFile = File(...),
     method: str = "pearson",
 ):
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(
-            status_code=400,
-            detail="Please upload a CSV file.",
-        )
-
-    content = await file.read(MAX_FILE_SIZE + 1)
-
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail="File exceeds the 10 MB limit.",
-        )
+    df = await _read_csv_upload(file)
 
     try:
-        df = pd.read_csv(BytesIO(content))
         result = calculate_correlations(df, method)
-        return {"filename": file.filename, **result}
+    except (ValueError, TypeError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
 
-    except (pd.errors.ParserError, UnicodeDecodeError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
+    return {"filename": file.filename, **result}
+
 
 @app.post("/analysis/outliers")
 async def analyze_outliers(
     file: UploadFile = File(...),
     column: str = Form(...),
 ):
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(
-            status_code=400,
-            detail="Please upload a CSV file.",
-        )
-
-    content = await file.read(MAX_FILE_SIZE + 1)
-
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail="File exceeds the 10 MB limit.",
-        )
+    df = await _read_csv_upload(file)
 
     try:
-        df = pd.read_csv(BytesIO(content))
         result = detect_outliers(df, column)
-        return {"filename": file.filename, **result}
+    except (ValueError, TypeError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
 
-    except (pd.errors.ParserError, UnicodeDecodeError, ValueError) as error:
-        raise HTTPException(status_code=400, detail=str(error))
+    return {"filename": file.filename, **result}
 
 
 @app.post("/agent/chat")
@@ -313,12 +254,6 @@ async def agent_chat(
     file: UploadFile = File(...),
     question: str = Form(...),
 ):
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(
-            status_code=400,
-            detail="Please upload a CSV file.",
-        )
-
     if not question.strip():
         raise HTTPException(
             status_code=400,
@@ -334,33 +269,7 @@ async def agent_chat(
             ),
         )
 
-    content = await file.read(MAX_FILE_SIZE + 1)
-
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail="File exceeds the 10 MB limit.",
-        )
-
-    if not content:
-        raise HTTPException(
-            status_code=400,
-            detail="The uploaded file is empty.",
-        )
-
-    try:
-        df = pd.read_csv(BytesIO(content))
-    except (pd.errors.ParserError, UnicodeDecodeError, ValueError):
-        raise HTTPException(
-            status_code=400,
-            detail="The file could not be parsed as a valid CSV.",
-        ) from None
-
-    if df.empty or len(df.columns) == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="The CSV must contain a header and at least one data row.",
-        )
+    df = await _read_csv_upload(file)
 
     try:
         return await run_agent(df, question)
@@ -372,33 +281,7 @@ async def agent_chat(
 
 @app.post("/ml/targets")
 async def ml_targets(file: UploadFile = File(...)):
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(
-            status_code=400,
-            detail="Please upload a CSV file.",
-        )
-
-    content = await file.read(MAX_FILE_SIZE + 1)
-
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail="File exceeds the 10 MB limit.",
-        )
-
-    if not content:
-        raise HTTPException(
-            status_code=400,
-            detail="The uploaded file is empty.",
-        )
-
-    try:
-        df = pd.read_csv(BytesIO(content))
-    except (pd.errors.ParserError, UnicodeDecodeError, ValueError):
-        raise HTTPException(
-            status_code=400,
-            detail="The file could not be parsed as a valid CSV.",
-        ) from None
+    df = await _read_csv_upload(file)
 
     try:
         result = inspect_targets(df)
@@ -416,33 +299,7 @@ async def ml_train(
     task: str = Form(""),
     test_size: float = Form(0.2),
 ):
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(
-            status_code=400,
-            detail="Please upload a CSV file.",
-        )
-
-    content = await file.read(MAX_FILE_SIZE + 1)
-
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail="File exceeds the 10 MB limit.",
-        )
-
-    if not content:
-        raise HTTPException(
-            status_code=400,
-            detail="The uploaded file is empty.",
-        )
-
-    try:
-        df = pd.read_csv(BytesIO(content))
-    except (pd.errors.ParserError, UnicodeDecodeError, ValueError):
-        raise HTTPException(
-            status_code=400,
-            detail="The file could not be parsed as a valid CSV.",
-        ) from None
+    df = await _read_csv_upload(file)
 
     features = [
         column.strip()
@@ -462,3 +319,24 @@ async def ml_train(
         raise HTTPException(status_code=400, detail=str(error)) from None
 
     return {"filename": file.filename, **result}
+
+
+@app.post("/reports/generate")
+def generate_report_endpoint(
+    payload: dict = Body(...),
+    format: str = Query("json"),
+):
+    # Reports are built purely from results the user already computed;
+    # nothing is recalculated, stored, or executed.
+    try:
+        content, media_type, filename = build_report(payload, format)
+    except ReportError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
+
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        },
+    )

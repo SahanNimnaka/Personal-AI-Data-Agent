@@ -20,7 +20,7 @@ const METRIC_HELP: Record<string, string> = {
 };
 
 export default function MlPage() {
-  const { file } = useDataset();
+  const { file, recordResult } = useDataset();
   const [targets, setTargets] = useState<MlTargetsResponse | null>(null);
   const [target, setTarget] = useState('');
   const [features, setFeatures] = useState<string[]>([]);
@@ -64,21 +64,21 @@ export default function MlPage() {
     setTraining(true);
     setError(null);
     try {
-      setResult(
-        await mlTrain(
-          file,
-          target,
-          features,
-          selected?.task ?? '',
-          testSize,
-        ),
+      const response = await mlTrain(
+        file,
+        target,
+        features,
+        selected?.task ?? '',
+        testSize,
       );
+      setResult(response);
+      recordResult('ml', { ...response });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Training failed.');
     } finally {
       setTraining(false);
     }
-  }, [file, target, features, selected, testSize]);
+  }, [file, target, features, selected, testSize, recordResult]);
 
   if (!file) {
     return (

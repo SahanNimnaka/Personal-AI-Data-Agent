@@ -21,6 +21,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
+from services.json_utils import to_json_safe
+
 RANDOM_SEED = 42
 MIN_ROWS = 20
 MIN_CLASS_COUNT = 2
@@ -161,46 +163,42 @@ def _classification_candidates() -> list[tuple[str, Any]]:
 
 def _regression_metrics(y_true: pd.Series, y_pred: np.ndarray) -> dict:
     return {
-        "mae": round(float(mean_absolute_error(y_true, y_pred)), 4),
-        "rmse": round(float(root_mean_squared_error(y_true, y_pred)), 4),
-        "r2": round(float(r2_score(y_true, y_pred)), 4),
+        "mae": _finite(mean_absolute_error(y_true, y_pred)),
+        "rmse": _finite(root_mean_squared_error(y_true, y_pred)),
+        "r2": _finite(r2_score(y_true, y_pred)),
     }
+
+
+def _finite(value: Any) -> float | None:
+    result = float(value)
+    return round(result, 4) if np.isfinite(result) else None
 
 
 def _classification_metrics(y_true: pd.Series, y_pred: np.ndarray) -> dict:
     return {
-        "accuracy": round(float(accuracy_score(y_true, y_pred)), 4),
-        "precision": round(
-            float(
-                precision_score(
-                    y_true, y_pred, average="weighted", zero_division=0
-                )
-            ),
-            4,
+        "accuracy": _finite(accuracy_score(y_true, y_pred)),
+        "precision": _finite(
+            precision_score(
+                y_true, y_pred, average="weighted", zero_division=0
+            )
         ),
-        "recall": round(
-            float(
-                recall_score(
-                    y_true, y_pred, average="weighted", zero_division=0
-                )
-            ),
-            4,
+        "recall": _finite(
+            recall_score(
+                y_true, y_pred, average="weighted", zero_division=0
+            )
         ),
-        "f1": round(
-            float(
-                f1_score(
-                    y_true, y_pred, average="weighted", zero_division=0
-                )
-            ),
-            4,
+        "f1": _finite(
+            f1_score(
+                y_true, y_pred, average="weighted", zero_division=0
+            )
         ),
     }
 
 
 def _primary_metric(task: str, metrics: dict[str, float]) -> tuple[str, float]:
     if task == "regression":
-        return "r2", metrics["r2"]
-    return "f1", metrics["f1"]
+        return "r2", metrics["r2"] if metrics["r2"] is not None else float("-inf")
+    return "f1", metrics["f1"] if metrics["f1"] is not None else float("-inf")
 
 
 def train_and_compare(
@@ -393,25 +391,27 @@ def train_and_compare(
         reverse=reverse,
     )[0]
 
-    return {
-        "task": task,
-        "target_column": str(target_column),
-        "target_type": (
-            "numeric" if task == "regression" else "categorical"
-        ),
-        "feature_columns": list(feature_columns),
-        "row_count": int(len(data)),
-        "train_rows": int(len(X_train)),
-        "test_rows": int(len(X_test)),
-        "test_size": test_size,
-        "random_seed": RANDOM_SEED,
-        "primary_metric": primary_name,
-        "best_model": best["model"],
-        "models": results,
-        "notes": (
-            "Metrics are computed on held-out test data. The target "
-            "column is excluded from features and preprocessing is fit "
-            "on the training split only. Small datasets produce "
-            "unreliable estimates."
-        ),
-    }
+    return to_json_safe(
+        {
+            "task": task,
+            "target_column": str(target_column),
+            "target_type": (
+                "numeric" if task == "regression" else "categorical"
+            ),
+            "feature_columns": list(feature_columns),
+            "row_count": int(len(data)),
+            "train_rows": int(len(X_train)),
+            "test_rows": int(len(X_test)),
+            "test_size": test_size,
+            "random_seed": RANDOM_SEED,
+            "primary_metric": primary_name,
+            "best_model": best["model"],
+            "models": results,
+            "notes": (
+                "Metrics are computed on held-out test data. The target "
+                "column is excluded from features and preprocessing is fit "
+                "on the training split only. Small datasets produce "
+                "unreliable estimates."
+            ),
+        }
+    )

@@ -66,3 +66,11 @@ export function validateTestSize(testSize: number): FileValidationResult {
   }
   return { ok: true };
 }
+
+export function parseReportFilename(
+  disposition: string | null,
+  format: string,
+): string {
+  const match = disposition?.match(/filename="([^"]+)"/);
+  return match?.[1] ?? `report.${format}`;
+}

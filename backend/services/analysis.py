@@ -3,6 +3,8 @@ from typing import Any
 
 import pandas as pd
 
+from services.json_utils import safe_float, to_json_safe
+
 
 def descriptive_statistics(
     df: pd.DataFrame,
@@ -26,13 +28,13 @@ def descriptive_statistics(
     return {
         "column": column,
         "count": int(series.count()),
-        "mean": float(series.mean()),
-        "median": float(series.median()),
+        "mean": safe_float(series.mean()),
+        "median": safe_float(series.median()),
         "standard_deviation": (
-            float(series.std()) if len(series) > 1 else None
+            safe_float(series.std()) if len(series) > 1 else None
         ),
-        "minimum": float(series.min()),
-        "maximum": float(series.max()),
+        "minimum": safe_float(series.min()),
+        "maximum": safe_float(series.max()),
     }
 
 
@@ -65,5 +67,7 @@ def group_by_column(
     return {
         "group_column": group_column,
         "value_column": value_column,
-        "groups": result.fillna("").to_dict(orient="records"),
+        "groups": to_json_safe(
+            result.fillna("").to_dict(orient="records")
+        ),
     }

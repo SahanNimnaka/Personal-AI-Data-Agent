@@ -1,6 +1,8 @@
 
 import pandas as pd
 
+from services.json_utils import safe_float, to_json_safe
+
 
 def calculate_correlations(
     df: pd.DataFrame,
@@ -94,22 +96,25 @@ def detect_outliers(df: pd.DataFrame, column: str) -> dict:
     outliers = [
         {
             "row_index": int(index),
-            "value": float(value),
+            "value": safe_float(value),
         }
         for index, value in series[mask].items()
     ]
 
-    return {
-        "column": column,
-        "method": "IQR",
-        "q1": q1,
-        "q3": q3,
-        "iqr": float(iqr),
-        "lower_bound": float(lower_bound),
-        "upper_bound": float(upper_bound),
-        "outlier_count": len(outliers),
-        "outliers": outliers,
-        "interpretation_note": (
-            "Flagged values are potential outliers, not necessarily errors."
-        ),
-    }
+    return to_json_safe(
+        {
+            "column": column,
+            "method": "IQR",
+            "q1": safe_float(q1),
+            "q3": safe_float(q3),
+            "iqr": safe_float(iqr),
+            "lower_bound": safe_float(lower_bound),
+            "upper_bound": safe_float(upper_bound),
+            "outlier_count": len(outliers),
+            "outliers": outliers,
+            "interpretation_note": (
+                "Flagged values are potential outliers, not "
+                "necessarily errors."
+            ),
+        }
+    )

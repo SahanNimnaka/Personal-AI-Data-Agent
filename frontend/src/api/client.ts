@@ -11,6 +11,7 @@ import type {
   ProfileResponse,
   UploadResponse,
 } from './types';
+import { parseReportFilename } from '../utils/validation';
 
 const BASE_URL: string =
   import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
@@ -26,15 +27,32 @@ export class ApiError extends Error {
 }
 
 async function extractError(response: Response): Promise<string> {
+  const fallback = messageForStatus(response.status);
   try {
     const body = await response.json();
-    if (typeof body?.detail === 'string') {
+    if (typeof body?.detail === 'string' && body.detail.trim()) {
       return body.detail;
     }
-    return `Request failed with status ${response.status}`;
+    return fallback;
   } catch {
-    return `Request failed with status ${response.status}`;
+    return fallback;
   }
+}
+
+export function messageForStatus(status: number): string {
+  if (status === 0) {
+    return 'Cannot reach the API server. Is the backend running?';
+  }
+  if (status === 413) {
+    return 'The file is too large for the server.';
+  }
+  if (status >= 500) {
+    return 'The server encountered an error. Please try again.';
+  }
+  if (status === 404) {
+    return 'The requested resource was not found.';
+  }
+  return `Request failed with status ${status}`;
 }
 
 async function request<T>(
@@ -45,10 +63,7 @@ async function request<T>(
   try {
     response = await fetch(`${BASE_URL}${path}`, init);
   } catch {
-    throw new ApiError(
-      0,
-      'Cannot reach the API server. Is the backend running?',
-    );
+    throw new ApiError(0, messageForStatus(0));
   }
 
   if (!response.ok) {
@@ -191,4 +206,58 @@ export async function mlTrain(
   });
 }
 
+export type ReportFormat = 'json' | 'csv' | 'html';
+
+export interface ReportSection {
+  type:
+    | 'profile'
+    | 'descriptive'
+    | 'group'
+    | 'correlations'
+    | 'outliers'
+    | 'ml';
+  data: Record<string, unknown>;
+}
+
+export interface ReportPayload {
+  filename: string;
+  rows: number | null;
+  columns: number | null;
+  sections: ReportSection[];
+}
+
+export interface DownloadedReport {
+  blob: Blob;
+  filename: string;
+}
+
+export async function generateReport(
+  payload: ReportPayload,
+  format: ReportFormat,
+): Promise<DownloadedReport> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${BASE_URL}/reports/generate?format=${format}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+    );
+  } catch {
+    throw new ApiError(0, messageForStatus(0));
+  }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, await extractError(response));
+  }
+
+  const disposition = response.headers.get('content-disposition');
+  const filename = parseReportFilename(disposition, format);
+
+  return { blob: await response.blob(), filename };
+}
+
 export { BASE_URL };
+

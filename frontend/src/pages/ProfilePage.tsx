@@ -10,7 +10,7 @@ import { useDataset } from '../context/DatasetContext';
 import { formatBytes, formatNumber } from '../utils/validation';
 
 export default function ProfilePage() {
-  const { file } = useDataset();
+  const { file, recordResult } = useDataset();
   const [result, setResult] = useState<ProfileResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,13 +20,19 @@ export default function ProfilePage() {
     setLoading(true);
     setError(null);
     try {
-      setResult(await profileDataset(file));
+      const response = await profileDataset(file);
+      setResult(response);
+      recordResult('profile', {
+        overview: response.overview,
+        columns: response.columns,
+        numeric_statistics: response.numeric_statistics,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Profiling failed.');
     } finally {
       setLoading(false);
     }
-  }, [file]);
+  }, [file, recordResult]);
 
   useEffect(() => {
     setResult(null);

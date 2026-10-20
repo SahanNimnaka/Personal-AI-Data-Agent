@@ -9,6 +9,7 @@ import GroupPage from './pages/GroupPage';
 import MlPage from './pages/MlPage';
 import OutliersPage from './pages/OutliersPage';
 import ProfilePage from './pages/ProfilePage';
+import ReportsPage from './pages/ReportsPage';
 import UploadPage from './pages/UploadPage';
 
 export default function App() {
@@ -30,6 +31,7 @@ export default function App() {
       {page === 'outliers' && <OutliersPage />}
       {page === 'agent' && <AgentPage />}
       {page === 'ml' && <MlPage />}
+      {page === 'reports' && <ReportsPage />}
     </Layout>
   );
 }

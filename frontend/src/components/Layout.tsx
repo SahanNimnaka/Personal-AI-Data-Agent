@@ -9,7 +9,8 @@ export type PageId =
   | 'correlations'
   | 'outliers'
   | 'agent'
-  | 'ml';
+  | 'ml'
+  | 'reports';
 
 const NAV_ITEMS: { id: PageId; label: string }[] = [
   { id: 'upload', label: 'Dataset' },
@@ -21,6 +22,7 @@ const NAV_ITEMS: { id: PageId; label: string }[] = [
   { id: 'outliers', label: 'Outliers' },
   { id: 'agent', label: 'AI Agent' },
   { id: 'ml', label: 'Machine Learning' },
+  { id: 'reports', label: 'Reports' },
 ];
 
 interface Props {

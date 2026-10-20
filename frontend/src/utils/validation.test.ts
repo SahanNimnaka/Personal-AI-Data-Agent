@@ -3,6 +3,7 @@ import {
   formatBytes,
   formatNumber,
   MAX_FILE_SIZE_BYTES,
+  parseReportFilename,
   validateCsvFile,
   validateQuestion,
   validateTestSize,
@@ -75,5 +76,21 @@ describe('validateTestSize', () => {
   it('accepts valid fractions', () => {
     expect(validateTestSize(0.2).ok).toBe(true);
     expect(validateTestSize(0.5).ok).toBe(true);
+  });
+});
+
+describe('parseReportFilename', () => {
+  it('extracts the filename from a content-disposition header', () => {
+    expect(
+      parseReportFilename(
+        'attachment; filename="data-report.html"',
+        'html',
+      ),
+    ).toBe('data-report.html');
+  });
+
+  it('falls back to a format-based name when absent', () => {
+    expect(parseReportFilename(null, 'csv')).toBe('report.csv');
+    expect(parseReportFilename('', 'json')).toBe('report.json');
   });
 });

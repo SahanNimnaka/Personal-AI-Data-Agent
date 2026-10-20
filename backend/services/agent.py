@@ -1,5 +1,6 @@
 
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -9,8 +10,11 @@ import pandas as pd
 
 from services.analysis import descriptive_statistics, group_by_column
 from services.anomaly import calculate_correlations, detect_outliers
+from services.json_utils import to_json_safe
 from services.profiling import profile_dataset
 from services.visualization import create_chart
+
+logger = logging.getLogger("personal_ai_data_agent.agent")
 
 MAX_TOOL_CALLS = 6
 MAX_ROUNDS = 3
@@ -434,6 +438,16 @@ async def _llm_run(
             except ValueError as exc:
                 result = {"error": str(exc)}
                 status = "error"
+            except Exception as exc:  # noqa: BLE001 - never crash a request
+                logger.exception(
+                    "Tool '%s' failed unexpectedly", call.name
+                )
+                result = {
+                    "error": (
+                        "The tool could not complete on this dataset."
+                    )
+                }
+                status = "error"
 
             tools_executed.append(
                 {
@@ -447,7 +461,9 @@ async def _llm_run(
                 {
                     "role": "tool",
                     "tool_call_id": call.id,
-                    "content": json.dumps(result, default=str),
+                    "content": json.dumps(
+                        to_json_safe(result), default=str
+                    ),
                 }
             )
 

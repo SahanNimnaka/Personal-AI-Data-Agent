@@ -11,7 +11,7 @@ import { useNumericColumns } from '../hooks/useColumns';
 import { formatNumber } from '../utils/validation';
 
 export default function OutliersPage() {
-  const { file } = useDataset();
+  const { file, recordResult } = useDataset();
   const numericColumns = useNumericColumns();
   const [column, setColumn] = useState('');
   const [result, setResult] = useState<OutliersResponse | null>(null);
@@ -29,7 +29,9 @@ export default function OutliersPage() {
     setLoading(true);
     setError(null);
     try {
-      setResult(await detectOutliers(file, column));
+      const response = await detectOutliers(file, column);
+      setResult(response);
+      recordResult('outliers', { ...response });
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Detection failed.',
@@ -37,7 +39,7 @@ export default function OutliersPage() {
     } finally {
       setLoading(false);
     }
-  }, [file, column]);
+  }, [file, column, recordResult]);
 
   if (!file) {
     return (

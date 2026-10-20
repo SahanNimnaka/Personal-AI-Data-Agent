@@ -10,7 +10,7 @@ import { useNumericColumns } from '../hooks/useColumns';
 import { formatNumber } from '../utils/validation';
 
 export default function DescriptivePage() {
-  const { file } = useDataset();
+  const { file, recordResult } = useDataset();
   const numericColumns = useNumericColumns();
   const [column, setColumn] = useState('');
   const [result, setResult] = useState<DescriptiveResponse | null>(null);
@@ -28,7 +28,9 @@ export default function DescriptivePage() {
     setLoading(true);
     setError(null);
     try {
-      setResult(await descriptiveStatistics(file, column));
+      const response = await descriptiveStatistics(file, column);
+      setResult(response);
+      recordResult('descriptive', { ...response });
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Analysis failed.',
@@ -36,7 +38,7 @@ export default function DescriptivePage() {
     } finally {
       setLoading(false);
     }
-  }, [file, column]);
+  }, [file, column, recordResult]);
 
   if (!file) {
     return (

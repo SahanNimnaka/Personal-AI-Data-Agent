@@ -3,6 +3,8 @@ from typing import Any
 
 import pandas as pd
 
+from services.json_utils import safe_float
+
 
 def profile_dataset(df: pd.DataFrame) -> dict[str, Any]:
     """
@@ -49,11 +51,11 @@ def profile_dataset(df: pd.DataFrame) -> dict[str, Any]:
     for column in numeric_df.columns:
         series = numeric_df[column]
         numeric_statistics[str(column)] = {
-            "mean": _safe_float(series.mean()),
-            "median": _safe_float(series.median()),
-            "standard_deviation": _safe_float(series.std()),
-            "minimum": _safe_float(series.min()),
-            "maximum": _safe_float(series.max()),
+            "mean": safe_float(series.mean()),
+            "median": safe_float(series.median()),
+            "standard_deviation": safe_float(series.std()),
+            "minimum": safe_float(series.min()),
+            "maximum": safe_float(series.max()),
         }
 
     return {
@@ -69,11 +71,3 @@ def profile_dataset(df: pd.DataFrame) -> dict[str, Any]:
         "columns": columns,
         "numeric_statistics": numeric_statistics,
     }
-
-
-def _safe_float(value: Any) -> float | None:
-    """Convert a numeric result to a JSON-safe float."""
-    if pd.isna(value):
-        return None
-
-    return float(value)

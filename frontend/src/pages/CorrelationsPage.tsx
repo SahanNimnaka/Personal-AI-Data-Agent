@@ -12,7 +12,7 @@ type Method = 'pearson' | 'spearman' | 'kendall';
 const METHODS: Method[] = ['pearson', 'spearman', 'kendall'];
 
 export default function CorrelationsPage() {
-  const { file } = useDataset();
+  const { file, recordResult } = useDataset();
   const [method, setMethod] = useState<Method>('pearson');
   const [result, setResult] = useState<CorrelationsResponse | null>(
     null,
@@ -30,7 +30,9 @@ export default function CorrelationsPage() {
     setLoading(true);
     setError(null);
     try {
-      setResult(await correlations(file, method));
+      const response = await correlations(file, method);
+      setResult(response);
+      recordResult('correlations', { ...response });
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Correlation failed.',
@@ -38,7 +40,7 @@ export default function CorrelationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [file, method]);
+  }, [file, method, recordResult]);
 
   if (!file) {
     return (
