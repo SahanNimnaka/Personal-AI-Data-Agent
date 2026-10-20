@@ -5,6 +5,7 @@ import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from services.profiling import profile_dataset
 from services.analysis import descriptive_statistics, group_by_column
+from services.visualization import create_chart
 
 app = FastAPI(
     title="Personal AI Data Agent",
@@ -194,3 +195,43 @@ async def analyze_groups(
         raise HTTPException(status_code=400, detail=str(exc)) from None
 
     return result
+
+
+@app.post("/visualizations/chart")
+async def generate_chart(
+    file: UploadFile = File(...),
+    chart_type: str = "bar",
+    x_column: str = "",
+    y_column: str | None = None,
+):
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only CSV files are supported.",
+        )
+
+    content = await file.read(MAX_FILE_SIZE + 1)
+
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="File exceeds the 10 MB limit.",
+        )
+
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail="The uploaded file is empty.",
+        )
+
+    try:
+        df = pd.read_csv(BytesIO(content))
+        chart = create_chart(df, chart_type, x_column, y_column)
+    except (pd.errors.ParserError, UnicodeDecodeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    return {
+        "chart_type": chart_type,
+        "chart": chart,
+    }
+
