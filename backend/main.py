@@ -1,5 +1,6 @@
 
 import logging
+import os
 from io import BytesIO
 
 import pandas as pd
@@ -36,12 +37,45 @@ app = FastAPI(
     version="0.1.0",
 )
 
+DEFAULT_CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+
+def parse_cors_origins(raw: str | None) -> list[str]:
+    """
+    Parse the comma-separated CORS_ORIGINS environment variable.
+
+    Returns the default local-development origins when the variable is
+    unset or blank. Wildcards are rejected because they are unsafe for
+    public deployments. Whitespace and empty entries are ignored.
+    """
+    if raw is None or not raw.strip():
+        return list(DEFAULT_CORS_ORIGINS)
+
+    origins: list[str] = []
+    for entry in raw.split(","):
+        origin = entry.strip()
+        if not origin:
+            continue
+        if origin == "*":
+            raise ValueError(
+                "CORS_ORIGINS must not contain the wildcard '*'. "
+                "List explicit origins instead."
+            )
+        if origin not in origins:
+            origins.append(origin)
+
+    if not origins:
+        return list(DEFAULT_CORS_ORIGINS)
+
+    return origins
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=parse_cors_origins(os.environ.get("CORS_ORIGINS")),
     allow_methods=["*"],
     allow_headers=["*"],
 )
