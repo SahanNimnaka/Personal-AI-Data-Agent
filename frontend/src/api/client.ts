@@ -5,6 +5,8 @@ import type {
   CorrelationsResponse,
   DescriptiveResponse,
   GroupResponse,
+  MlTargetsResponse,
+  MlTrainResponse,
   OutliersResponse,
   ProfileResponse,
   UploadResponse,
@@ -157,6 +159,33 @@ export async function askAgent(
   const form = fileForm(file);
   form.append('question', question);
   return request<AgentResponse>('/agent/chat', {
+    method: 'POST',
+    body: form,
+  });
+}
+
+export async function mlTargets(file: File): Promise<MlTargetsResponse> {
+  return request<MlTargetsResponse>('/ml/targets', {
+    method: 'POST',
+    body: fileForm(file),
+  });
+}
+
+export async function mlTrain(
+  file: File,
+  targetColumn: string,
+  featureColumns: string[],
+  task: string,
+  testSize: number,
+): Promise<MlTrainResponse> {
+  const form = fileForm(file);
+  form.append('target_column', targetColumn);
+  form.append('feature_columns', featureColumns.join(','));
+  if (task) {
+    form.append('task', task);
+  }
+  form.append('test_size', String(testSize));
+  return request<MlTrainResponse>('/ml/train', {
     method: 'POST',
     body: form,
   });

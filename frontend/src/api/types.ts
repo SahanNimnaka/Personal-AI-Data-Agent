@@ -128,3 +128,43 @@ export interface AgentResponse {
   tools_executed: AgentToolExecution[];
   notes: string;
 }
+
+export interface MlTarget {
+  column: string;
+  dtype: string;
+  eligible: boolean;
+  task: 'regression' | 'classification' | null;
+  missing_values: number;
+  unique_values: number;
+}
+
+export interface MlTargetsResponse {
+  filename: string;
+  row_count: number;
+  columns: string[];
+  targets: MlTarget[];
+}
+
+export interface MlModelResult {
+  model: string;
+  status: 'ok' | 'failed';
+  error: string | null;
+  metrics: Record<string, number> | null;
+}
+
+export interface MlTrainResponse {
+  filename: string;
+  task: 'regression' | 'classification';
+  target_column: string;
+  target_type: string;
+  feature_columns: string[];
+  row_count: number;
+  train_rows: number;
+  test_rows: number;
+  test_size: number;
+  random_seed: number;
+  primary_metric: string;
+  best_model: string;
+  models: MlModelResult[];
+  notes: string;
+}

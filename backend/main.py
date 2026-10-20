@@ -13,6 +13,7 @@ from services.agent import (
     MAX_QUESTION_LENGTH,
     run_agent,
 )
+from services.ml import inspect_targets, train_and_compare
 
 app = FastAPI(
     title="Personal AI Data Agent",
@@ -367,3 +368,97 @@ async def agent_chat(
         raise HTTPException(status_code=400, detail=str(error)) from None
     except LLMProviderError as error:
         raise HTTPException(status_code=502, detail=str(error)) from None
+
+
+@app.post("/ml/targets")
+async def ml_targets(file: UploadFile = File(...)):
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(
+            status_code=400,
+            detail="Please upload a CSV file.",
+        )
+
+    content = await file.read(MAX_FILE_SIZE + 1)
+
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="File exceeds the 10 MB limit.",
+        )
+
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail="The uploaded file is empty.",
+        )
+
+    try:
+        df = pd.read_csv(BytesIO(content))
+    except (pd.errors.ParserError, UnicodeDecodeError, ValueError):
+        raise HTTPException(
+            status_code=400,
+            detail="The file could not be parsed as a valid CSV.",
+        ) from None
+
+    try:
+        result = inspect_targets(df)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
+
+    return {"filename": file.filename, **result}
+
+
+@app.post("/ml/train")
+async def ml_train(
+    file: UploadFile = File(...),
+    target_column: str = Form(...),
+    feature_columns: str = Form(""),
+    task: str = Form(""),
+    test_size: float = Form(0.2),
+):
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(
+            status_code=400,
+            detail="Please upload a CSV file.",
+        )
+
+    content = await file.read(MAX_FILE_SIZE + 1)
+
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="File exceeds the 10 MB limit.",
+        )
+
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail="The uploaded file is empty.",
+        )
+
+    try:
+        df = pd.read_csv(BytesIO(content))
+    except (pd.errors.ParserError, UnicodeDecodeError, ValueError):
+        raise HTTPException(
+            status_code=400,
+            detail="The file could not be parsed as a valid CSV.",
+        ) from None
+
+    features = [
+        column.strip()
+        for column in feature_columns.split(",")
+        if column.strip()
+    ] or None
+
+    try:
+        result = train_and_compare(
+            df,
+            target_column=target_column,
+            feature_columns=features,
+            task=task or None,
+            test_size=test_size,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
+
+    return {"filename": file.filename, **result}

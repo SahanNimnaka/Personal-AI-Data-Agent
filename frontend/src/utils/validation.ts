@@ -56,3 +56,13 @@ export function validateQuestion(question: string): FileValidationResult {
   }
   return { ok: true };
 }
+
+export function validateTestSize(testSize: number): FileValidationResult {
+  if (Number.isNaN(testSize) || testSize < 0.1 || testSize > 0.5) {
+    return {
+      ok: false,
+      error: 'The test fraction must be between 0.1 and 0.5.',
+    };
+  }
+  return { ok: true };
+}

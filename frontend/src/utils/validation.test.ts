@@ -5,6 +5,7 @@ import {
   MAX_FILE_SIZE_BYTES,
   validateCsvFile,
   validateQuestion,
+  validateTestSize,
 } from './validation';
 
 function fakeFile(name: string, size: number): File {
@@ -62,5 +63,17 @@ describe('validateQuestion', () => {
 
   it('accepts a normal question', () => {
     expect(validateQuestion('What is the mean sales?').ok).toBe(true);
+  });
+});
+
+describe('validateTestSize', () => {
+  it('rejects out-of-range fractions', () => {
+    expect(validateTestSize(0.05).ok).toBe(false);
+    expect(validateTestSize(0.9).ok).toBe(false);
+  });
+
+  it('accepts valid fractions', () => {
+    expect(validateTestSize(0.2).ok).toBe(true);
+    expect(validateTestSize(0.5).ok).toBe(true);
   });
 });

@@ -6,6 +6,7 @@ import ChartsPage from './pages/ChartsPage';
 import CorrelationsPage from './pages/CorrelationsPage';
 import DescriptivePage from './pages/DescriptivePage';
 import GroupPage from './pages/GroupPage';
+import MlPage from './pages/MlPage';
 import OutliersPage from './pages/OutliersPage';
 import ProfilePage from './pages/ProfilePage';
 import UploadPage from './pages/UploadPage';
@@ -28,6 +29,7 @@ export default function App() {
       {page === 'correlations' && <CorrelationsPage />}
       {page === 'outliers' && <OutliersPage />}
       {page === 'agent' && <AgentPage />}
+      {page === 'ml' && <MlPage />}
     </Layout>
   );
 }
