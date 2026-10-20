@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from main import app
+from main import MAX_FILE_SIZE, app
 
 client = TestClient(app)
 
@@ -292,7 +292,7 @@ def test_api_header_only_csv_rejected():
 
 
 def test_api_oversized_file_rejected():
-    oversized = b"x" * (10 * 1024 * 1024 + 1)
+    oversized = b"x" * (MAX_FILE_SIZE + 1)
 
     response = client.post(
         "/datasets/upload",
@@ -300,3 +300,18 @@ def test_api_oversized_file_rejected():
     )
 
     assert response.status_code == 413
+
+
+def test_api_file_at_exact_limit_is_not_rejected_for_size():
+    # A body of exactly MAX_FILE_SIZE bytes must clear the size guard.
+    # The payload is not valid CSV, so it fails later with 400, which
+    # proves the 413 size check was not the reason for rejection.
+    at_limit = b"x" * MAX_FILE_SIZE
+
+    response = client.post(
+        "/datasets/upload",
+        files=_csv_files(at_limit, "limit.csv"),
+    )
+
+    assert response.status_code == 400
+

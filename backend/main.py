@@ -80,6 +80,40 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+class StripApiPrefixMiddleware:
+    """
+    Allow the API to be reached both directly (/health) and behind the
+    public /api path used in production (e.g. /api/health) via the Vercel
+    service rewrite, which forwards the original request path unchanged.
+
+    Requests under /api are handled as if the prefix were absent, so the
+    route table stays identical in local development, tests, and
+    production.
+    """
+
+    def __init__(self, asgi_app):
+        self.asgi_app = asgi_app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") in ("http", "websocket"):
+            path = scope.get("path", "")
+            if path == "/api" or path.startswith("/api/"):
+                new_path = path[len("/api"):] or "/"
+                scope = dict(scope)
+                scope["path"] = new_path
+                raw_path = scope.get("raw_path")
+                if raw_path:
+                    prefix = b"/api"
+                    if raw_path == prefix:
+                        scope["raw_path"] = b"/"
+                    elif raw_path.startswith(prefix + b"/"):
+                        scope["raw_path"] = raw_path[len(prefix):]
+        await self.asgi_app(scope, receive, send)
+
+
+app.add_middleware(StripApiPrefixMiddleware)
+
 logger = logging.getLogger("personal_ai_data_agent")
 
 
@@ -96,7 +130,9 @@ async def unhandled_exception_handler(
     )
 
 
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+# 4 MB: kept below Vercel's hard 4.5 MB (4,500,000 byte) request-body
+# limit, which rejects larger requests before they reach this function.
+MAX_FILE_SIZE = 4 * 1024 * 1024  # 4 MB
 PREVIEW_ROWS = 5
 MAX_COLUMNS = 2000
 
@@ -122,7 +158,7 @@ async def _read_csv_upload(
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=413,
-            detail="File exceeds the 10 MB limit.",
+            detail="File exceeds the 4 MB limit.",
         )
 
     if not content:

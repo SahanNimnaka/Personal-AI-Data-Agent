@@ -1,4 +1,6 @@
-export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+// Kept below Vercel's hard 4.5 MB request-body limit, which rejects
+// larger uploads before they reach the backend.
+export const MAX_FILE_SIZE_BYTES = 4 * 1024 * 1024;
 export const MAX_QUESTION_LENGTH = 2000;
 
 export interface FileValidationResult {
@@ -18,7 +20,7 @@ export function validateCsvFile(file: File): FileValidationResult {
   if (file.size > MAX_FILE_SIZE_BYTES) {
     return {
       ok: false,
-      error: 'File exceeds the 10 MB size limit.',
+      error: 'File exceeds the 4 MB size limit.',
     };
   }
 

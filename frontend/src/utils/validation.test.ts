@@ -33,7 +33,7 @@ describe('validateCsvFile', () => {
       fakeFile('big.csv', MAX_FILE_SIZE_BYTES + 1),
     );
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('10 MB');
+    expect(result.error).toContain('4 MB');
   });
 });
 

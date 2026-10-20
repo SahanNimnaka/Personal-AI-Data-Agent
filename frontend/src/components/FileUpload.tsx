@@ -47,7 +47,7 @@ export default function FileUpload() {
           Upload a CSV dataset
         </p>
         <p className="mt-1 text-sm text-slate-500">
-          Drag and drop a file here, or browse. Maximum size 10 MB.
+          Drag and drop a file here, or browse. Maximum size 4 MB.
         </p>
         <input
           ref={inputRef}

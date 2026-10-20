@@ -13,8 +13,14 @@ import type {
 } from './types';
 import { parseReportFilename } from '../utils/validation';
 
+// In production the frontend and backend are served from the same origin
+// (Vercel Services), and all API traffic is routed under /api. During
+// local development VITE_API_BASE_URL points at the local backend, which
+// serves the same /api-prefixed paths.
 const BASE_URL: string =
   import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
+
+const API_PREFIX = '/api';
 
 export class ApiError extends Error {
   status: number;
@@ -61,7 +67,7 @@ async function request<T>(
 ): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${BASE_URL}${path}`, init);
+    response = await fetch(`${BASE_URL}${API_PREFIX}${path}`, init);
   } catch {
     throw new ApiError(0, messageForStatus(0));
   }
@@ -238,7 +244,7 @@ export async function generateReport(
   let response: Response;
   try {
     response = await fetch(
-      `${BASE_URL}/reports/generate?format=${format}`,
+      `${BASE_URL}${API_PREFIX}/reports/generate?format=${format}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
