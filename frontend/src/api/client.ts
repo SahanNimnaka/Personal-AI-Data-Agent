@@ -13,14 +13,41 @@ import type {
 } from './types';
 import { parseReportFilename } from '../utils/validation';
 
-// In production the frontend and backend are served from the same origin
-// (Vercel Services), and all API traffic is routed under /api. During
-// local development VITE_API_BASE_URL points at the local backend, which
-// serves the same /api-prefixed paths.
-const BASE_URL: string =
-  import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
+// All API traffic is routed under /api. In production the frontend and
+// backend share one origin (Vercel Services), so requests must be
+// same-origin and must never target localhost. During local development
+// the Vite dev server proxies /api to the backend (see vite.config.ts),
+// which keeps the same same-origin shape as production.
 
 const API_PREFIX = '/api';
+
+// Only a non-empty value counts as an explicit override. An empty string
+// (e.g. VITE_API_BASE_URL= in a .env file) must not silently
+// disable the default behavior.
+export function resolveApiBaseUrl(
+  configured: string | undefined,
+  isProduction: boolean,
+): string {
+  const override = configured?.trim();
+  if (override) {
+    return override.replace(/\/+$/, '');
+  }
+  // Production: same-origin, so requests go to /api on the current host.
+  // A localhost fallback here is what previously broke the deployment.
+  if (isProduction) {
+    return '';
+  }
+  // Development: also same-origin, served through the Vite dev proxy
+  // (vite.config.ts forwards /api to the local backend). This keeps
+  // development identical to production. Set VITE_API_BASE_URL only to
+  // bypass the proxy and target the backend directly.
+  return '';
+}
+
+const BASE_URL: string = resolveApiBaseUrl(
+  import.meta.env.VITE_API_BASE_URL,
+  import.meta.env.PROD,
+);
 
 export class ApiError extends Error {
   status: number;
@@ -61,14 +88,33 @@ export function messageForStatus(status: number): string {
   return `Request failed with status ${status}`;
 }
 
+// Builds an absolute request URL with exactly one /api prefix. The path
+// argument must start with "/" and must not already include the /api
+// prefix, otherwise the result would contain /api/api.
+export function buildApiUrl(
+  path: string,
+  baseUrl: string = BASE_URL,
+): string {
+  if (!path.startsWith('/')) {
+    throw new Error(`API path must start with "/": ${path}`);
+  }
+  if (path === API_PREFIX || path.startsWith(`${API_PREFIX}/`)) {
+    throw new Error(`API path must not include the /api prefix: ${path}`);
+  }
+  return `${baseUrl}${API_PREFIX}${path}`;
+}
+
 async function request<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${BASE_URL}${API_PREFIX}${path}`, init);
-  } catch {
+    response = await fetch(buildApiUrl(path), init);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('API path')) {
+      throw error;
+    }
     throw new ApiError(0, messageForStatus(0));
   }
 
@@ -244,7 +290,7 @@ export async function generateReport(
   let response: Response;
   try {
     response = await fetch(
-      `${BASE_URL}${API_PREFIX}/reports/generate?format=${format}`,
+      `${buildApiUrl(`/reports/generate`)}?format=${format}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
