@@ -305,3 +305,120 @@ def test_api_ml_train_non_csv():
         files={"file": ("data.txt", BytesIO(b"x"), "text/plain")},
     )
     assert response.status_code == 400
+
+
+# --- model ranking regressions --------------------------------------
+
+
+def _queue_metrics(monkeypatch, function_name, metrics):
+    """Feed controlled metric payloads to train_and_compare candidates."""
+    sequence = iter(metrics)
+    monkeypatch.setattr(
+        f"services.ml.{function_name}", lambda y_true, y_pred: next(sequence)
+    )
+
+
+def test_classification_selects_highest_f1(monkeypatch, classification_df):
+    # Candidate order: baseline_majority, logistic_regression, random_forest.
+    _queue_metrics(
+        monkeypatch,
+        "_classification_metrics",
+        [{"f1": 0.10}, {"f1": 0.90}, {"f1": 0.50}],
+    )
+
+    result = train_and_compare(
+        classification_df, target_column="label", test_size=0.2
+    )
+
+    assert result["primary_metric"] == "f1"
+    assert result["best_model"] == "logistic_regression"
+    best = max(result["models"], key=lambda m: m["metrics"]["f1"])
+    assert result["best_model"] == best["model"]
+
+
+def test_regression_selects_highest_r2(monkeypatch, regression_df):
+    # Candidate order: baseline_mean, linear_regression, random_forest.
+    _queue_metrics(
+        monkeypatch,
+        "_regression_metrics",
+        [{"r2": 0.10}, {"r2": 0.95}, {"r2": 0.50}],
+    )
+
+    result = train_and_compare(
+        regression_df, target_column="spend", test_size=0.2
+    )
+
+    assert result["primary_metric"] == "r2"
+    assert result["best_model"] == "linear_regression"
+    best = max(result["models"], key=lambda m: m["metrics"]["r2"])
+    assert result["best_model"] == best["model"]
+
+
+@pytest.mark.parametrize(
+    "first_metrics",
+    [{"f1": None}, {"accuracy": 1.0}, None],
+)
+def test_missing_f1_never_wins(
+    monkeypatch, classification_df, first_metrics
+):
+    _queue_metrics(
+        monkeypatch,
+        "_classification_metrics",
+        [first_metrics, {"f1": 0.40}, {"f1": 0.20}],
+    )
+
+    result = train_and_compare(
+        classification_df, target_column="label", test_size=0.2
+    )
+
+    assert result["best_model"] == "logistic_regression"
+
+
+@pytest.mark.parametrize(
+    "invalid_value",
+    [float("nan"), float("inf"), float("-inf"), "high", True],
+)
+def test_invalid_primary_metric_never_wins(
+    monkeypatch, classification_df, invalid_value
+):
+    _queue_metrics(
+        monkeypatch,
+        "_classification_metrics",
+        [{"f1": invalid_value}, {"f1": 0.30}, {"f1": 0.10}],
+    )
+
+    result = train_and_compare(
+        classification_df, target_column="label", test_size=0.2
+    )
+
+    assert result["best_model"] == "logistic_regression"
+
+
+def test_all_invalid_primary_metrics_raise_value_error(
+    monkeypatch, regression_df
+):
+    _queue_metrics(
+        monkeypatch,
+        "_regression_metrics",
+        [{"r2": None}, {"r2": float("nan")}, {"r2": "invalid"}],
+    )
+
+    with pytest.raises(ValueError, match="invalid primary metric"):
+        train_and_compare(regression_df, target_column="spend")
+
+
+def test_api_ml_train_all_invalid_metrics_returns_400(monkeypatch):
+    _queue_metrics(
+        monkeypatch,
+        "_regression_metrics",
+        [{"r2": None}, {"r2": float("nan")}, {"r2": "invalid"}],
+    )
+
+    response = client.post(
+        "/ml/train",
+        data={"target_column": "spend"},
+        files={"file": ("data.csv", BytesIO(regression_csv()), "text/csv")},
+    )
+
+    assert response.status_code == 400
+    assert "invalid primary metric" in response.json()["detail"]

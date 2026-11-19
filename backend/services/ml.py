@@ -1,4 +1,5 @@
 
+import numbers
 from typing import Any
 
 import numpy as np
@@ -195,10 +196,23 @@ def _classification_metrics(y_true: pd.Series, y_pred: np.ndarray) -> dict:
     }
 
 
+def _metric_score(metrics: Any, name: str) -> float:
+    """Return a finite metric value, or -inf when it is unusable."""
+    if not isinstance(metrics, dict):
+        return float("-inf")
+    value = metrics.get(name)
+    if isinstance(value, bool) or not isinstance(value, numbers.Real):
+        return float("-inf")
+    try:
+        score = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return float("-inf")
+    return score if np.isfinite(score) else float("-inf")
+
+
 def _primary_metric(task: str, metrics: dict[str, float]) -> tuple[str, float]:
-    if task == "regression":
-        return "r2", metrics["r2"] if metrics["r2"] is not None else float("-inf")
-    return "f1", metrics["f1"] if metrics["f1"] is not None else float("-inf")
+    name = "r2" if task == "regression" else "f1"
+    return name, _metric_score(metrics, name)
 
 
 def train_and_compare(
@@ -383,12 +397,20 @@ def train_and_compare(
         task, successful[0]["metrics"]
     )
 
-    reverse = task == "regression"
+    scores = [
+        _primary_metric(task, r["metrics"])[1] for r in successful
+    ]
+    if not any(np.isfinite(score) for score in scores):
+        raise ValueError(
+            "All candidate models produced an invalid primary metric "
+            f"'{primary_name}' on this dataset."
+        )
 
+    # R² and F1 are both higher-is-better, so always sort descending.
     best = sorted(
         successful,
-        key=lambda r: r["metrics"][primary_name],
-        reverse=reverse,
+        key=lambda r: _primary_metric(task, r["metrics"])[1],
+        reverse=True,
     )[0]
 
     return to_json_safe(
